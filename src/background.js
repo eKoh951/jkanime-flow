@@ -19,9 +19,15 @@ function broadcast(tabId, message) {
   chrome.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
-// Atajos de teclado. Se pueden reconfigurar en chrome://extensions/shortcuts.
-chrome.commands.onCommand.addListener(async (command) => {
-  const tab = await activeJkanimeTab();
+// Segundos de salto para una serie: override por serie o el global.
+function resolveSkipSeconds(settings, url) {
+  const slug = jkflowSeriesSlug(url);
+  return (slug && settings.skipBySeries[slug]) || settings.skipSeconds;
+}
+
+// Ejecuta una acción (de un atajo de teclado o de un botón del player) sobre la
+// pestaña de jkanime: la traduce en un mensaje a los frames.
+async function runCommand(tab, command) {
   if (!tab) return;
 
   if (command === 'next-episode') {
@@ -30,22 +36,83 @@ chrome.commands.onCommand.addListener(async (command) => {
     broadcast(tab.id, { type: 'prev' });
   } else if (command === 'skip-intro') {
     const settings = await jkflowGetSettings();
-    const slug = jkflowSeriesSlug(tab.url);
-    const seconds = (slug && settings.skipBySeries[slug]) || settings.skipSeconds;
-    broadcast(tab.id, { type: 'skip', seconds });
+    broadcast(tab.id, { type: 'skip', seconds: resolveSkipSeconds(settings, tab.url) });
+  }
+}
+
+// Atajos de teclado. Se pueden reconfigurar en chrome://extensions/shortcuts.
+chrome.commands.onCommand.addListener(async (command) => {
+  runCommand(await activeJkanimeTab(), command);
+});
+
+// Atajos REALES actualmente asignados (respeta lo que el user cambie en
+// chrome://extensions/shortcuts). Mapa { 'next-episode': 'Ctrl+Shift+Right', ... }.
+function getShortcuts() {
+  return new Promise((resolve) => {
+    if (!chrome.commands?.getAll) return resolve({});
+    chrome.commands.getAll((commands) => {
+      const map = {};
+      for (const command of commands || []) map[command.name] = command.shortcut || '';
+      resolve(map);
+    });
+  });
+}
+
+// Payload de "activate": settings (velocidad, autoplay, auto-skip, fullscreen),
+// los segundos de salto resueltos para la serie de `url`, y los atajos actuales.
+const activatePayload = (settings, url, shortcuts) => ({
+  type: 'activate',
+  autoSpeed: settings.autoSpeed,
+  speed: settings.playbackSpeed,
+  autoplay: settings.autoplay,
+  autoSkipIntro: settings.autoSkipIntro,
+  autoFullscreen: settings.autoFullscreen,
+  skipSeconds: resolveSkipSeconds(settings, url),
+  shortcuts: shortcuts || {},
+});
+
+// Resuelve settings + atajos en paralelo y arma el payload para `url`.
+async function buildActivatePayload(url) {
+  const [settings, shortcuts] = await Promise.all([jkflowGetSettings(), getShortcuts()]);
+  return activatePayload(settings, url, shortcuts);
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!sender.tab) return;
+
+  // PUSH: el content script de jkanime pide "activar" los reproductores (al
+  // cargar la página y al cambiar de servidor). Reenviamos a todos los frames.
+  if (message?.type === 'activatePlayers') {
+    buildActivatePayload(sender.tab.url).then((payload) => {
+      broadcast(sender.tab.id, payload);
+    });
+    return;
+  }
+
+  // PULL: el player.js de un frame pide su config en cuanto carga / aparece un
+  // <video>. Esto evita la race condition de que el iframe del proveedor monte
+  // después del push. Solo respondemos en pestañas de jkanime.
+  if (message?.type === 'requestActivate') {
+    if (!isJkanime(sender.tab.url)) {
+      sendResponse(null);
+      return false;
+    }
+    buildActivatePayload(sender.tab.url).then(sendResponse);
+    return true; // respuesta asíncrona
+  }
+
+  // Botones del player (siguiente/anterior/saltar): misma lógica que los atajos.
+  if (message?.type === 'command' && isJkanime(sender.tab.url)) {
+    runCommand(sender.tab, message.command);
+    return;
   }
 });
 
-// El content script de jkanime pide "activar" los reproductores (al cargar la
-// página y al cambiar de servidor). Reenviamos la velocidad a todos los frames.
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type === 'activatePlayers' && sender.tab) {
-    jkflowGetSettings().then((settings) => {
-      broadcast(sender.tab.id, {
-        type: 'activate',
-        autoSpeed: settings.autoSpeed,
-        speed: settings.playbackSpeed,
-      });
-    });
-  }
+// Cambios en los settings (popup) → aplicar EN VIVO a las pestañas de jkanime
+// abiertas, sin recargar. Re-empuja velocidad y autoplay a todos sus frames.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'sync') return;
+  chrome.tabs.query({ url: '*://*.jkanime.net/*' }, async (tabs) => {
+    for (const tab of tabs) broadcast(tab.id, await buildActivatePayload(tab.url));
+  });
 });

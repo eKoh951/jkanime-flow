@@ -6,7 +6,10 @@ const fields = {
   preferredServer: document.getElementById('preferredServer'),
   autoSpeed: document.getElementById('autoSpeed'),
   playbackSpeed: document.getElementById('playbackSpeed'),
+  autoplay: document.getElementById('autoplay'),
   skipSeconds: document.getElementById('skipSeconds'),
+  autoSkipIntro: document.getElementById('autoSkipIntro'),
+  autoFullscreen: document.getElementById('autoFullscreen'),
 };
 const skipSeriesInput = document.getElementById('skipSeries');
 const seriesRow = document.getElementById('seriesRow');
@@ -48,7 +51,10 @@ async function load() {
   fields.preferredServer.value = settings.preferredServer;
   fields.autoSpeed.checked = settings.autoSpeed;
   fields.playbackSpeed.value = String(settings.playbackSpeed);
+  fields.autoplay.checked = settings.autoplay;
   fields.skipSeconds.value = settings.skipSeconds;
+  fields.autoSkipIntro.checked = settings.autoSkipIntro;
+  fields.autoFullscreen.checked = settings.autoFullscreen;
 
   await detectSeries();
   if (currentSlug && settings.skipBySeries[currentSlug] != null) {
@@ -62,7 +68,10 @@ async function saveGlobal() {
     preferredServer: fields.preferredServer.value,
     autoSpeed: fields.autoSpeed.checked,
     playbackSpeed: Number(fields.playbackSpeed.value),
+    autoplay: fields.autoplay.checked,
     skipSeconds: Number(fields.skipSeconds.value),
+    autoSkipIntro: fields.autoSkipIntro.checked,
+    autoFullscreen: fields.autoFullscreen.checked,
   });
   showSaved();
 }

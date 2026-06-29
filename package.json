@@ -1,0 +1,12 @@
+{
+  "name": "jkanime-flow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Extensión MV3 para jkanime + harness de pruebas agéntico.",
+  "scripts": {
+    "test": "node test/harness.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}

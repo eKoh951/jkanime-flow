@@ -8,6 +8,9 @@ var JKFLOW_DEFAULTS = {
   preferredServer: 'Streamwish',
   autoSpeed: true,
   playbackSpeed: 1.25,
+  autoplay: true, // dar play en cuanto el reproductor tenga el video listo
+  autoSkipIntro: false, // saltar el opening solo al empezar el capítulo
+  autoFullscreen: false, // entrar a pantalla completa en el 1er gesto del capítulo
   skipSeconds: 85, // duración típica de un opening (~1:25)
   skipBySeries: {}, // override por serie: { pokemon: 80 }
 };

@@ -36,11 +36,26 @@
       </select>
     </label>
 
+    <label class="row">
+      <span>Reproducir automáticamente</span>
+      <input type="checkbox" id="autoplay" />
+    </label>
+
     <hr />
 
     <label class="row">
       <span>Saltar opening (segundos)</span>
       <input type="number" id="skipSeconds" min="1" max="600" />
+    </label>
+
+    <label class="row">
+      <span>Saltar opening automáticamente al empezar</span>
+      <input type="checkbox" id="autoSkipIntro" />
+    </label>
+
+    <label class="row">
+      <span>Pantalla completa automática</span>
+      <input type="checkbox" id="autoFullscreen" />
     </label>
 
     <label class="row" id="seriesRow" hidden>
@@ -50,7 +65,9 @@
 
     <p class="hint">
       Atajos (cámbialos en <code>chrome://extensions/shortcuts</code>):<br />
-      <b>Alt+.</b> siguiente · <b>Alt+,</b> anterior · <b>Alt+S</b> saltar opening.
+      Win/Linux: <b>Ctrl+⇧+→</b> sig · <b>Ctrl+⇧+←</b> ant · <b>Ctrl+⇧+Espacio</b> saltar.<br />
+      Mac: <b>⌘⇧→</b> sig · <b>⌘⇧←</b> ant · <b>⌘⇧Espacio</b> saltar.<br />
+      También hay botones sobre el reproductor.
     </p>
 
     <p id="status" class="status"></p>

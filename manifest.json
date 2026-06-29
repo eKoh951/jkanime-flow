@@ -24,15 +24,15 @@
   ],
   "commands": {
     "next-episode": {
-      "suggested_key": { "default": "Alt+Period" },
+      "suggested_key": { "default": "Ctrl+Shift+Right", "mac": "Command+Shift+Right" },
       "description": "Siguiente capítulo"
     },
     "prev-episode": {
-      "suggested_key": { "default": "Alt+Comma" },
+      "suggested_key": { "default": "Ctrl+Shift+Left", "mac": "Command+Shift+Left" },
       "description": "Capítulo anterior"
     },
     "skip-intro": {
-      "suggested_key": { "default": "Alt+S" },
+      "suggested_key": { "default": "Ctrl+Shift+Space", "mac": "Command+Shift+Space" },
       "description": "Saltar opening"
     }
   }
