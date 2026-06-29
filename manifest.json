@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "JKAnime Flow",
+  "version": "0.1.0",
+  "description": "Atajos estilo Netflix para jkanime: servidor por defecto, siguiente/anterior capítulo, saltar opening y velocidad automática.",
+  "permissions": ["storage", "tabs"],
+  "background": { "service_worker": "src/background.js" },
+  "action": {
+    "default_title": "JKAnime Flow",
+    "default_popup": "src/popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.jkanime.net/*"],
+      "js": ["src/lib/defaults.js", "src/content/jkanime.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "all_frames": true,
+      "js": ["src/content/player.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "next-episode": {
+      "suggested_key": { "default": "Alt+Period" },
+      "description": "Siguiente capítulo"
+    },
+    "prev-episode": {
+      "suggested_key": { "default": "Alt+Comma" },
+      "description": "Capítulo anterior"
+    },
+    "skip-intro": {
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Saltar opening"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>JKAnime Flow</h1>
+
+    <label class="row">
+      <span>Elegir servidor automáticamente</span>
+      <input type="checkbox" id="autoSelectServer" />
+    </label>
+
+    <label class="row">
+      <span>Servidor preferido</span>
+      <select id="preferredServer"></select>
+    </label>
+
+    <hr />
+
+    <label class="row">
+      <span>Fijar velocidad automáticamente</span>
+      <input type="checkbox" id="autoSpeed" />
+    </label>
+
+    <label class="row">
+      <span>Velocidad</span>
+      <select id="playbackSpeed">
+        <option value="1">1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="1.75">1.75x</option>
+        <option value="2">2x</option>
+      </select>
+    </label>
+
+    <hr />
+
+    <label class="row">
+      <span>Saltar opening (segundos)</span>
+      <input type="number" id="skipSeconds" min="1" max="600" />
+    </label>
+
+    <label class="row" id="seriesRow" hidden>
+      <span>Salto para <b id="seriesName"></b></span>
+      <input type="number" id="skipSeries" min="0" max="600" placeholder="default" />
+    </label>
+
+    <p class="hint">
+      Atajos (cámbialos en <code>chrome://extensions/shortcuts</code>):<br />
+      <b>Alt+.</b> siguiente · <b>Alt+,</b> anterior · <b>Alt+S</b> saltar opening.
+    </p>
+
+    <p id="status" class="status"></p>
+
+    <script src="../lib/defaults.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
