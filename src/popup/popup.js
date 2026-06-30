@@ -14,9 +14,19 @@ const fields = {
 const skipSeriesInput = document.getElementById('skipSeries');
 const seriesRow = document.getElementById('seriesRow');
 const seriesName = document.getElementById('seriesName');
+const speedValue = document.getElementById('speedValue');
 const status = document.getElementById('status');
 
 let currentSlug = null;
+
+// "1.5" en vez de "1.50"; "1" en vez de "1.00". Añade el signo ×.
+function formatSpeed(value) {
+  return `${Number(value).toFixed(2).replace(/\.?0+$/, '')}×`;
+}
+
+function updateSpeedLabel() {
+  speedValue.textContent = formatSpeed(fields.playbackSpeed.value);
+}
 
 function fillServerOptions() {
   for (const name of JKFLOW_SERVERS) {
@@ -51,6 +61,7 @@ async function load() {
   fields.preferredServer.value = settings.preferredServer;
   fields.autoSpeed.checked = settings.autoSpeed;
   fields.playbackSpeed.value = String(settings.playbackSpeed);
+  updateSpeedLabel();
   fields.autoplay.checked = settings.autoplay;
   fields.skipSeconds.value = settings.skipSeconds;
   fields.autoSkipIntro.checked = settings.autoSkipIntro;
@@ -90,6 +101,9 @@ async function saveSeries() {
 for (const field of Object.values(fields)) {
   field.addEventListener('change', saveGlobal);
 }
+// El slider: muestra el valor en vivo al arrastrar; guarda al soltar (evita
+// saturar chrome.storage con escrituras durante el arrastre).
+fields.playbackSpeed.addEventListener('input', updateSpeedLabel);
 skipSeriesInput.addEventListener('change', saveSeries);
 
 load();

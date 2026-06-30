@@ -43,6 +43,28 @@ input[type='number'] {
   width: 70px;
 }
 
+.speed {
+  margin: 8px 0;
+}
+
+.speed .row {
+  margin: 0 0 2px;
+}
+
+.speed input[type='range'] {
+  width: 100%;
+  margin: 2px 0 4px;
+  accent-color: #e50914;
+  cursor: pointer;
+}
+
+#speedValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: right;
+}
+
 .hint {
   margin: 12px 0 0;
   font-size: 12px;

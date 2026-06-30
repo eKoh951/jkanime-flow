@@ -69,6 +69,7 @@ const activatePayload = (settings, url, shortcuts) => ({
   autoFullscreen: settings.autoFullscreen,
   skipSeconds: resolveSkipSeconds(settings, url),
   shortcuts: shortcuts || {},
+  settings, // settings completos (con defaults) para el panel de ajustes del player
 });
 
 // Resuelve settings + atajos en paralelo y arma el payload para `url`.

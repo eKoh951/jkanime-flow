@@ -13,12 +13,11 @@ if (!window.__jkflowPlayer) {
   let desiredSpeed = null; // null = no activado todavía, o autoSpeed apagado
   let autoplay = false; // dar play automático cuando el video esté listo
   let autoSkipIntro = false; // saltar el opening al empezar el capítulo
-  let autoFullscreen = false; // entrar a fullscreen en el 1er gesto del capítulo
   let skipSeconds = 0; // segundos del opening (resueltos por serie en el background)
-  let shortcuts = {}; // atajos actuales { command: 'Ctrl+Shift+Right' } para los chips
+  let currentSettings = {}; // settings completos (para el panel de ajustes del player)
   let activated = false; // ya recibimos config (push o pull) al menos una vez
-  let fullscreenArmed = false; // ya armamos el auto-fullscreen en este frame
-  let fsIntent = false; // el user ya gesticuló queriendo fullscreen (reintentamos hasta lograrlo)
+  // Nota: el auto-fullscreen lo maneja jkanime.js (top frame), que entra a
+  // fullscreen sobre el CONTENEDOR del player para que persista entre capítulos.
   const autoStarted = new WeakSet(); // videos a los que ya dimos play (no peleamos con el user)
   const autoSkipped = new WeakSet(); // videos a los que ya les saltamos el intro
 
@@ -58,6 +57,9 @@ if (!window.__jkflowPlayer) {
   // background (la navegación ocurre en el top frame de jkanime).
   let controls = null;
   let hideTimer = null;
+  let panel = null; // panel de ajustes (lazy, dentro de #__jkflow_controls)
+  let panelOpen = false;
+  const panelInputs = {}; // refs a los controles del panel para sincronizarlos
 
   const sendCommand = (command) =>
     chrome.runtime.sendMessage({ type: 'command', command }, () => void chrome.runtime.lastError);
@@ -67,33 +69,22 @@ if (!window.__jkflowPlayer) {
     controls.style.opacity = '1';
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (controls) controls.style.opacity = '0';
+      if (controls && !panelOpen) controls.style.opacity = '0';
     }, 2500);
   };
 
-  // Atajo "bonito": traduce "Command+Shift+Right" → "⌘ ⇧ →" (y respeta símbolos
-  // si Chrome ya los entrega así). Cubre Mac y Windows.
-  const KEY_GLYPH = {
-    command: '⌘', cmd: '⌘', meta: '⌘', mac: '⌘',
-    ctrl: 'Ctrl', control: 'Ctrl',
-    alt: '⌥', option: '⌥',
-    shift: '⇧',
-    right: '→', arrowright: '→',
-    left: '←', arrowleft: '←',
-    up: '↑', down: '↓',
-    space: 'Espacio', period: '.', comma: ',',
+  const formatSpeed = (value) => `${Number(value).toFixed(2).replace(/\.?0+$/, '')}×`;
+
+  // Escribe settings (desde el panel) a chrome.storage.sync. Esto dispara el
+  // storage.onChanged del background, que re-emite el activate a TODOS los frames
+  // → se aplica en vivo (velocidad, etc.) sin recargar.
+  const saveSetting = (partial) => {
+    try {
+      chrome.storage.sync.set(partial, () => void chrome.runtime.lastError);
+    } catch {
+      /* contexto de extensión invalidado: ignorar */
+    }
   };
-  const prettyKey = (raw) =>
-    !raw
-      ? ''
-      : raw
-          .split('+')
-          .map((token) => KEY_GLYPH[token.trim().toLowerCase()] || token.trim())
-          .join(' ')
-          // Mac entrega el atajo ya concatenado (ej. "⇧⌘Space"): traducimos restos.
-          .replace(/\bspace\b/gi, 'Espacio')
-          .replace(/\bright\b/gi, '→')
-          .replace(/\bleft\b/gi, '←');
 
   // Paleta tipo Netflix: primario blanco sólido, secundarios gris translúcido.
   const FONT = "'Netflix Sans','Helvetica Neue',Helvetica,Arial,system-ui,sans-serif";
@@ -105,19 +96,6 @@ if (!window.__jkflowPlayer) {
   const PRIMARY_HOVER = 'rgba(255,255,255,.78)';
   const SECONDARY_BG = 'rgba(109,109,110,.7)';
   const SECONDARY_HOVER = 'rgba(109,109,110,.45)';
-
-  const shortcutEls = {}; // {command: <kbd>} para refrescar el atajo en vivo
-
-  const makeKbd = (primary) => {
-    const kbd = document.createElement('span');
-    kbd.style.cssText =
-      'display:inline-flex;align-items:center;gap:3px;padding:3px 7px;border-radius:4px;' +
-      'font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.3px;' +
-      (primary
-        ? 'background:rgba(0,0,0,.09);color:rgba(0,0,0,.55);'
-        : 'background:rgba(255,255,255,.14);color:rgba(255,255,255,.8);');
-    return kbd;
-  };
 
   const makeButton = ({ icon, label, command, title, primary }) => {
     const button = document.createElement('button');
@@ -131,13 +109,7 @@ if (!window.__jkflowPlayer) {
         'padding:10px 16px;border:1px solid rgba(255,255,255,.18);' +
         'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);';
 
-    const text = document.createElement('span');
-    text.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
-    text.textContent = primary ? `${label} ${icon}` : `${icon} ${label}`;
-
-    const kbd = makeKbd(primary);
-    shortcutEls[command] = kbd;
-    button.append(text, kbd);
+    button.textContent = icon ? `${label} ${icon}` : label;
 
     button.addEventListener('mouseenter', () => {
       button.style.background = hover;
@@ -156,16 +128,165 @@ if (!window.__jkflowPlayer) {
     return button;
   };
 
-  // Refresca el texto del atajo en cada botón (y oculta el chip si no hay atajo).
-  // Escribe SOLO si cambió: apply() corre dentro del MutationObserver, y escribir
-  // el DOM sin condición re-dispararía el observer en bucle infinito (pegue de CPU).
-  const updateShortcuts = () => {
-    for (const [command, kbd] of Object.entries(shortcutEls)) {
-      const pretty = prettyKey(shortcuts[command]);
-      const display = pretty ? 'inline-flex' : 'none';
-      if (kbd.textContent !== pretty) kbd.textContent = pretty;
-      if (kbd.style.display !== display) kbd.style.display = display;
+  // --- Panel de ajustes (⚙) -----------------------------------------------
+  // Replica los controles clave del popup, dentro del reproductor. Cada cambio
+  // se guarda en storage y se aplica en vivo (mismo camino que el popup).
+  const panelRow = (labelText, control) => {
+    const row = document.createElement('div');
+    row.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;gap:12px;margin:9px 0;';
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    label.style.cssText = 'flex:1;';
+    row.append(label, control);
+    return row;
+  };
+
+  const makeToggle = (key) => {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.style.cssText = 'width:17px;height:17px;accent-color:#e50914;cursor:pointer;';
+    input.addEventListener('change', () => saveSetting({ [key]: input.checked }));
+    panelInputs[key] = input;
+    return input;
+  };
+
+  const togglePanel = () => {
+    if (!panel) return;
+    panelOpen = !panelOpen;
+    panel.style.display = panelOpen ? 'block' : 'none';
+    if (panelOpen) {
+      syncPanel();
+      showControls();
     }
+  };
+
+  const buildPanel = () => {
+    const p = document.createElement('div');
+    p.id = '__jkflow_panel';
+    p.style.cssText =
+      'position:fixed;right:2.5%;bottom:18%;z-index:2147483647;width:266px;' +
+      'background:rgba(18,18,18,.97);color:#fff;border:1px solid rgba(255,255,255,.12);' +
+      'border-radius:12px;padding:13px 16px;box-shadow:0 10px 34px rgba(0,0,0,.6);' +
+      'pointer-events:auto;display:none;' +
+      "font:500 13px/1.35 'Netflix Sans','Helvetica Neue',Helvetica,Arial,system-ui,sans-serif;";
+
+    const header = document.createElement('div');
+    header.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;';
+    const title = document.createElement('strong');
+    title.textContent = 'Ajustes';
+    title.style.cssText = 'font-size:14px;';
+    const close = document.createElement('button');
+    close.textContent = '✕';
+    close.title = 'Cerrar';
+    close.style.cssText =
+      'all:unset;cursor:pointer;color:rgba(255,255,255,.7);font-size:14px;padding:2px 6px;';
+    close.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePanel();
+    });
+    header.append(title, close);
+    p.append(header);
+
+    // Velocidad (slider 1×–2×, pasos de 0.05).
+    const speedHead = document.createElement('div');
+    speedHead.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;margin:10px 0 1px;';
+    const speedLabel = document.createElement('span');
+    speedLabel.textContent = 'Velocidad';
+    const speedVal = document.createElement('span');
+    speedVal.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;';
+    speedHead.append(speedLabel, speedVal);
+    const speed = document.createElement('input');
+    speed.type = 'range';
+    speed.min = '1';
+    speed.max = '2';
+    speed.step = '0.05';
+    speed.style.cssText = 'width:100%;accent-color:#e50914;cursor:pointer;margin:3px 0 6px;';
+    speed.addEventListener('input', () => (speedVal.textContent = formatSpeed(speed.value)));
+    speed.addEventListener('change', () => saveSetting({ playbackSpeed: Number(speed.value) }));
+    panelInputs.playbackSpeed = speed;
+    panelInputs.speedVal = speedVal;
+    p.append(speedHead, speed);
+
+    // Toggles.
+    p.append(
+      panelRow('Velocidad automática', makeToggle('autoSpeed')),
+      panelRow('Reproducir automáticamente', makeToggle('autoplay')),
+      panelRow('Saltar opening al empezar', makeToggle('autoSkipIntro')),
+      panelRow('Pantalla completa automática', makeToggle('autoFullscreen')),
+    );
+
+    // Segundos de salto del opening.
+    const skipNum = document.createElement('input');
+    skipNum.type = 'number';
+    skipNum.min = '1';
+    skipNum.max = '600';
+    skipNum.style.cssText = 'width:62px;padding:4px 6px;font:inherit;';
+    skipNum.addEventListener('change', () => {
+      const value = Number(skipNum.value);
+      if (value >= 1) saveSetting({ skipSeconds: value });
+    });
+    panelInputs.skipSeconds = skipNum;
+    p.append(panelRow('Saltar opening (seg)', skipNum));
+
+    return p;
+  };
+
+  // Refleja currentSettings en los controles del panel. Setear .value/.checked
+  // son props (no atributos) → no disparan el MutationObserver. Igual filtramos.
+  const syncPanel = () => {
+    if (!panel) return;
+    const s = currentSettings;
+    // Nunca sobre-escribir el control que el usuario está tocando (ej. el slider
+    // mientras lo arrastra): lo dejaría "pegado" y no se movería.
+    const busy = (input) => input === document.activeElement;
+    const setVal = (input, value) => {
+      if (input && !busy(input) && value != null && input.value !== String(value)) {
+        input.value = String(value);
+      }
+    };
+    const setChk = (input, value) => {
+      if (input && !busy(input) && input.checked !== !!value) input.checked = !!value;
+    };
+    if (s.playbackSpeed != null) {
+      setVal(panelInputs.playbackSpeed, s.playbackSpeed);
+      const pretty = formatSpeed(s.playbackSpeed);
+      // Guardar: textContent dispara el MutationObserver → escribir siempre = bucle.
+      if (panelInputs.speedVal.textContent !== pretty) panelInputs.speedVal.textContent = pretty;
+    }
+    setChk(panelInputs.autoSpeed, s.autoSpeed);
+    setChk(panelInputs.autoplay, s.autoplay);
+    setChk(panelInputs.autoSkipIntro, s.autoSkipIntro);
+    setChk(panelInputs.autoFullscreen, s.autoFullscreen);
+    setVal(panelInputs.skipSeconds, s.skipSeconds);
+  };
+
+  // Botón de engranaje que abre/cierra el panel (va encima de "Siguiente").
+  const makeGear = () => {
+    const gear = document.createElement('button');
+    gear.textContent = '⚙';
+    gear.title = 'Ajustes';
+    gear.style.cssText =
+      `${BASE}justify-content:center;font-size:18px;line-height:1;color:#fff;` +
+      'background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);padding:8px 11px;' +
+      'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);';
+    gear.addEventListener('mouseenter', () => {
+      gear.style.background = 'rgba(229,9,20,.9)';
+      gear.style.transform = 'scale(1.06)';
+    });
+    gear.addEventListener('mouseleave', () => {
+      gear.style.background = 'rgba(0,0,0,.6)';
+      gear.style.transform = 'scale(1)';
+    });
+    gear.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePanel();
+    });
+    return gear;
   };
 
   // En fullscreen solo se renderiza el elemento en pantalla completa y sus
@@ -189,35 +310,38 @@ if (!window.__jkflowPlayer) {
     if (controls || !currentVideo()) return;
     controls = document.createElement('div');
     controls.id = '__jkflow_controls';
-    // Cluster abajo-derecha: [Anterior · Saltar intro]   [ SIGUIENTE ].
+    // Cluster abajo-derecha: [ Saltar intro ]   [ ⚙ / SIGUIENTE ].
     controls.style.cssText =
       'position:fixed;right:2.5%;bottom:8%;z-index:2147483647;' +
-      'display:flex;align-items:center;gap:18px;pointer-events:none;opacity:0;transition:opacity .25s ease;';
+      'display:flex;align-items:flex-end;gap:16px;pointer-events:none;opacity:0;transition:opacity .25s ease;';
 
-    const secondary = document.createElement('div');
-    secondary.style.cssText = 'display:flex;align-items:center;gap:10px;';
-    secondary.append(
-      makeButton({ icon: '⏮', label: 'Anterior', command: 'prev-episode', title: 'Capítulo anterior' }),
-      makeButton({ icon: '⏩', label: 'Saltar intro', command: 'skip-intro', title: 'Saltar opening' }),
+    // Columna derecha: el engranaje encima del botón "Siguiente".
+    const nextColumn = document.createElement('div');
+    nextColumn.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:8px;';
+    nextColumn.append(
+      makeGear(),
+      makeButton({
+        icon: '▶',
+        label: 'Siguiente',
+        command: 'next-episode',
+        title: 'Siguiente capítulo',
+        primary: true,
+      }),
     );
 
-    const next = makeButton({
-      icon: '▶',
-      label: 'Siguiente',
-      command: 'next-episode',
-      title: 'Siguiente capítulo',
-      primary: true,
-    });
-
-    controls.append(secondary, next);
-    updateShortcuts();
+    panel = buildPanel();
+    controls.append(
+      makeButton({ label: 'Saltar intro', command: 'skip-intro', title: 'Saltar opening' }),
+      nextColumn,
+      panel,
+    );
     placeControls();
     document.addEventListener('mousemove', showControls, true);
     showControls();
   };
 
-  // Al entrar/salir de fullscreen, reubica los botones dentro del nuevo
-  // elemento fullscreen para que sigan visibles.
+  // Al entrar/salir de fullscreen, reubica los botones dentro del elemento
+  // fullscreen para que sigan visibles.
   const onFullscreenChange = () => {
     placeControls();
     showControls();
@@ -233,8 +357,6 @@ if (!window.__jkflowPlayer) {
     maybeAutoSkip(video);
     if (activated) {
       ensureControls();
-      updateShortcuts();
-      armFullscreen();
     }
   };
 
@@ -258,130 +380,16 @@ if (!window.__jkflowPlayer) {
     skipVideo(video, skipSeconds - video.currentTime);
   };
 
-  // --- Auto pantalla completa ---------------------------------------------
-  // El navegador exige un gesto del usuario para entrar a fullscreen. Robusto:
-  //   1) Disparamos el botón de fullscreen del PROPIO reproductor del proveedor
-  //      (así conserva SU UI; no el player nativo de Chrome).
-  //   2) Si no hay botón, requestFullscreen sobre el CONTENEDOR del player (no
-  //      sobre el <video> pelado, que mostraría los controles de Chrome).
-  //   3) Reintentos: si el video aún no cargó al gesticular, lo volvemos a
-  //      intentar en cada evento de carga (la activación del gesto dura ~5 s) y
-  //      dejamos el gesto armado para el siguiente clic si se pasó la ventana.
-  const isFullscreen = () =>
-    !!(document.fullscreenElement || document.webkitFullscreenElement);
-
-  // Selectores comunes del botón de pantalla completa de players HTML5.
-  const FS_BUTTON_SELECTORS = [
-    '[data-plyr="fullscreen"]',
-    '.vjs-fullscreen-control',
-    '.jw-icon-fullscreen',
-    'button[aria-label*="fullscreen" i]',
-    'button[aria-label*="pantalla completa" i]',
-    'button[title*="fullscreen" i]',
-    '[class*="fullscreen" i][role="button"]',
-    '.fullscreen,.btn-fullscreen,.icon-fullscreen,.fullscreen-icon',
-  ];
-
-  const findProviderFsButton = () => {
-    for (const selector of FS_BUTTON_SELECTORS) {
-      let element;
-      try {
-        element = document.querySelector(selector);
-      } catch {
-        continue;
-      }
-      if (element && element.offsetParent !== null) return element; // visible
-    }
-    return null;
-  };
-
-  // Contenedor del player: sube desde el <video> al ancestro más alto que aún
-  // tenga ~el tamaño del video (el wrapper con los controles del proveedor).
-  const playerContainer = (video) => {
-    if (!video) return null;
-    let best = video;
-    let element = video.parentElement;
-    const minW = Math.max(video.clientWidth, 200);
-    const minH = Math.max(video.clientHeight, 150);
-    while (element && element !== document.body && element !== document.documentElement) {
-      const rect = element.getBoundingClientRect();
-      if (rect.width >= minW && rect.height >= minH) best = element;
-      element = element.parentElement;
-    }
-    return best;
-  };
-
-  const requestFs = (element) => {
-    const request = element.requestFullscreen || element.webkitRequestFullscreen;
-    if (!request) return;
-    try {
-      const result = request.call(element, { navigationUI: 'hide' });
-      if (result && result.catch) result.catch(() => {});
-    } catch {
-      /* sin gesto válido: reintentamos luego */
-    }
-  };
-
-  // Un intento de entrar a fullscreen con la mejor estrategia disponible.
-  const tryEnterFullscreen = () => {
-    if (isFullscreen()) {
-      disarmFullscreen();
-      return;
-    }
-    const button = findProviderFsButton();
-    if (button) {
-      button.click();
-    } else {
-      const target = playerContainer(currentVideo());
-      if (target) requestFs(target);
-    }
-    // Verifica si funcionó; si sí, desarmamos (no peleamos si el user luego sale).
-    setTimeout(() => {
-      if (isFullscreen()) disarmFullscreen();
-    }, 300);
-  };
-
-  let onGesture = null;
-  const disarmFullscreen = () => {
-    fsIntent = false;
-    if (!onGesture) return;
-    document.removeEventListener('pointerdown', onGesture, true);
-    document.removeEventListener('keydown', onGesture, true);
-    onGesture = null;
-  };
-
-  const armFullscreen = () => {
-    // SOLO en el frame que tiene el <video> (el del proveedor). Si armáramos en
-    // el top frame de jkanime, cada clic dispararía tryEnterFullscreen() ahí y
-    // secuestraría los clics de toda la página. currentVideo() lo garantiza.
-    if (fullscreenArmed || !autoFullscreen || !currentVideo()) return;
-    fullscreenArmed = true;
-    onGesture = (event) => {
-      if (event.target.closest?.('#__jkflow_controls')) return; // no al usar nuestros botones
-      if (!currentVideo()) return; // este frame ya no tiene video: no hacemos nada
-      fsIntent = true;
-      tryEnterFullscreen();
-    };
-    document.addEventListener('pointerdown', onGesture, true);
-    document.addEventListener('keydown', onGesture, true);
-  };
-
-  // Reintento al cargar el video: si el user ya gesticuló pero el video todavía
-  // no estaba listo, ahora sí lo intentamos (dentro de la ventana de activación).
-  const retryFullscreen = () => {
-    if (fsIntent && !isFullscreen()) tryEnterFullscreen();
-  };
-
   // Guarda la config recibida (de push o pull) y la aplica.
   const setConfig = (message) => {
     activated = true;
     desiredSpeed = message.autoSpeed ? message.speed : null;
     autoplay = !!message.autoplay;
     autoSkipIntro = !!message.autoSkipIntro;
-    autoFullscreen = !!message.autoFullscreen;
     skipSeconds = message.skipSeconds || 0;
-    shortcuts = message.shortcuts || {};
+    if (message.settings) currentSettings = message.settings;
     apply();
+    syncPanel(); // refleja cambios externos en el panel (no en cada mutación: aquí solo en activate)
   };
 
   // PULL: pedirle la config al background. Resuelve la race de que el iframe del
@@ -408,17 +416,12 @@ if (!window.__jkflowPlayer) {
     enforceSpeed();
     tryAutoplay(event.target);
     maybeAutoSkip(event.target);
-    retryFullscreen();
   }, true);
   document.addEventListener('canplay', (event) => {
     tryAutoplay(event.target);
     maybeAutoSkip(event.target);
-    retryFullscreen();
   }, true);
-  document.addEventListener('playing', (event) => {
-    maybeAutoSkip(event.target);
-    retryFullscreen();
-  }, true);
+  document.addEventListener('playing', (event) => maybeAutoSkip(event.target), true);
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === 'activate') {
@@ -428,7 +431,35 @@ if (!window.__jkflowPlayer) {
     }
   });
 
-  // Arranque: pide la config de una. Si este frame no tiene video aún, los
-  // listeners de arriba la volverán a pedir cuando el reproductor monte.
+  // Tecla F: entra/sale de pantalla completa del reproductor (este frame es el que
+  // tiene el foco mientras ves el video, así que aquí captura la F).
+  const isTyping = (el) =>
+    el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'f' && event.key !== 'F') return;
+      if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target)) return;
+      event.preventDefault();
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+      } else {
+        const el = document.documentElement;
+        const request = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (request) {
+          try {
+            const result = request.call(el);
+            if (result && result.catch) result.catch(() => {});
+          } catch {
+            /* sin gesto válido */
+          }
+        }
+      }
+    },
+    true,
+  );
+
+  // Arranque: pide la config. Si este frame no tiene video aún, los listeners de
+  // arriba la volverán a pedir cuando el reproductor monte.
   requestActivate();
 }

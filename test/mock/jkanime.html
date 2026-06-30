@@ -2,56 +2,47 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <title>Mock jkanime — Pokémon 37</title>
+    <title>Pokemon 37 — mock</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 16px; }
       .servers { display: inline-block; margin: 4px; padding: 6px 12px; background: #333; color: #fff; border-radius: 4px; cursor: pointer; }
       .servers.active { background: #e50914; }
       #nav a { color: #6cf; margin-right: 14px; }
       button { margin: 8px 8px 0 0; padding: 10px 14px; }
-      #player { display: block; margin-top: 12px; width: 760px; height: 430px; border: 0; background: #000; }
+      .player_box { margin-top: 12px; }
+      iframe.player_conte { display: block; width: 760px; height: 430px; border: 0; background: #000; }
     </style>
   </head>
   <body>
     <h2>Mock jkanime — Pokémon 37</h2>
 
-    <!-- Pestañas de servidor: jkanime.js usa el selector a.servers.btn-show -->
     <div id="servers">
-      <a class="servers btn-show active">Desu</a>
-      <a class="servers btn-show">Streamwish</a>
+      <a class="servers active" data-id="0">Desu</a>
+      <a class="servers" data-id="1">Streamwish</a>
     </div>
 
-    <!-- Links de navegación: jkanime.js los detecta por el texto -->
     <div id="nav">
       <a href="https://jkanime.net/pokemon/36/">Anterior</a>
       <a href="https://jkanime.net/pokemon/38/">Siguiente</a>
     </div>
 
     <button id="topBtn">Botón normal (top)</button>
-    <!-- "Cebo": si la extensión arma fullscreen en el TOP frame (bug), un clic
-         en cualquier lado terminaría clickeando este botón con clase fullscreen. -->
     <button id="fsBait" class="fullscreen" aria-label="fullscreen">cebo fullscreen</button>
 
-    <!-- El <video> vive en este iframe (dominio distinto), como el proveedor real. -->
-    <iframe id="player" src="https://provider.local/embed"></iframe>
+    <!-- fsTarget = el contenedor (padre del iframe); sobrevive al cambio de src. -->
+    <div class="player_box">
+      <iframe class="player_conte" src="https://provider.local/embed?ep=37"></iframe>
+    </div>
 
     <script>
+      // jkanime define los players en un array video[] dentro de un <script>.
+      // jkanime.js lo extrae al navegar in-place al siguiente capítulo.
+      var video = [];
+      video[0] = '<iframe class="player_conte" src="https://provider.local/embed?ep=37">';
       window.__topClicked = false;
       window.__fsClicked = false;
-      window.__navClicked = null;
-      document.getElementById('topBtn').addEventListener('click', () => {
-        window.__topClicked = true;
-      });
-      document.getElementById('fsBait').addEventListener('click', () => {
-        window.__fsClicked = true;
-      });
-      // Evita navegación real al clickear nav durante el test.
-      for (const a of document.querySelectorAll('#nav a')) {
-        a.addEventListener('click', (e) => {
-          e.preventDefault();
-          window.__navClicked = a.textContent.trim();
-        });
-      }
+      document.getElementById('topBtn').addEventListener('click', () => (window.__topClicked = true));
+      document.getElementById('fsBait').addEventListener('click', () => (window.__fsClicked = true));
     </script>
   </body>
 </html>

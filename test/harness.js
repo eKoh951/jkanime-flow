@@ -17,7 +17,8 @@ const ROOT = path.resolve(__dirname, '..');
 const ARTIFACTS = path.join(__dirname, '.artifacts');
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 
-const jkHtml = fs.readFileSync(path.join(__dirname, 'mock', 'jkanime.html'), 'utf8');
+const jk37Html = fs.readFileSync(path.join(__dirname, 'mock', 'jkanime.html'), 'utf8');
+const jk38Html = fs.readFileSync(path.join(__dirname, 'mock', 'jkanime38.html'), 'utf8');
 const providerHtml = fs.readFileSync(path.join(__dirname, 'mock', 'provider.html'), 'utf8');
 
 const results = [];
@@ -96,7 +97,8 @@ async function main() {
         return req.abort();
       }
       if (host.endsWith('jkanime.net')) {
-        return req.respond({ status: 200, contentType: 'text/html; charset=utf-8', body: jkHtml });
+        const body = /\/38\//.test(new URL(req.url()).pathname) ? jk38Html : jk37Html;
+        return req.respond({ status: 200, contentType: 'text/html; charset=utf-8', body });
       }
       if (host === 'provider.local') {
         return req.respond({ status: 200, contentType: 'text/html; charset=utf-8', body: providerHtml });
@@ -111,26 +113,95 @@ async function main() {
     await provider.waitForSelector('#__jkflow_controls', { timeout: 10000 });
     ok('botones montados en el frame del proveedor');
 
-    // 5) Asserts de UI: 3 botones + chips de atajo.
+    // 5) Asserts de UI: botones de acción, engranaje, panel. Sin chips ni iconos.
     const ui = await provider.evaluate(() => {
       const root = document.getElementById('__jkflow_controls');
+      const text = root.innerText || '';
       const buttons = [...root.querySelectorAll('button')];
-      const chips = buttons
-        .map((b) => b.querySelector('span:last-child'))
-        .map((c) => (c && c.style.display !== 'none' ? c.textContent : ''));
-      return { count: buttons.length, labels: buttons.map((b) => b.textContent), chips };
+      const saltar = buttons.find((b) => /Saltar intro/.test(b.textContent));
+      return {
+        hasSiguiente: /Siguiente/.test(text),
+        hasSaltar: /Saltar intro/.test(text),
+        hasAnterior: /Anterior/.test(text),
+        hasGear: buttons.some((b) => b.textContent.includes('⚙')),
+        hasPanel: !!root.querySelector('#__jkflow_panel'),
+        saltarText: saltar ? saltar.textContent.trim() : '',
+        hasChips: /[⌘⇧]|Espacio/.test(text),
+      };
     });
-    assert('hay 3 botones', ui.count === 3, JSON.stringify(ui.labels));
-    assert(
-      'el botón "Siguiente" existe',
-      ui.labels.some((l) => /Siguiente/.test(l)),
-      JSON.stringify(ui.labels),
+    assert('botón "Siguiente" existe', ui.hasSiguiente, JSON.stringify(ui));
+    assert('botón "Saltar intro" existe', ui.hasSaltar, JSON.stringify(ui));
+    assert('ya NO existe "Anterior"', !ui.hasAnterior, JSON.stringify(ui));
+    assert('existe el engranaje de ajustes (⚙)', ui.hasGear, JSON.stringify(ui));
+    assert('ya NO hay chips de atajo', !ui.hasChips, JSON.stringify(ui));
+    assert('"Saltar intro" sin icono', ui.saltarText === 'Saltar intro', `text="${ui.saltarText}"`);
+
+    // 5b) El panel de ajustes abre con ⚙ y sus cambios persisten en storage.
+    const panelDisplay = await provider.evaluate(() => {
+      const gear = [...document.querySelectorAll('#__jkflow_controls button')].find((b) =>
+        b.textContent.includes('⚙'),
+      );
+      gear.click();
+      return getComputedStyle(document.getElementById('__jkflow_panel')).display;
+    });
+    assert('el panel de ajustes abre con ⚙', panelDisplay !== 'none', panelDisplay);
+
+    await provider.evaluate(() => {
+      const slider = document.querySelector('#__jkflow_panel input[type="range"]');
+      slider.value = '1.75';
+      slider.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await sleep(400);
+    const storedSpeed = await sw.evaluate(
+      () => new Promise((r) => chrome.storage.sync.get({ playbackSpeed: null }, (x) => r(x.playbackSpeed))),
     );
+    assert('cambiar velocidad en el panel persiste (1.75)', storedSpeed === 1.75, `stored=${storedSpeed}`);
+
+    // 5c) REGRESIÓN: el slider NO debe resetearse cuando el DOM muta (el player
+    //     real muta constante). Antes apply()→syncPanel() lo reseteaba y "no se movía".
+    const sliderAfter = await provider.evaluate(async () => {
+      const slider = document.querySelector('#__jkflow_panel input[type="range"]');
+      slider.focus();
+      slider.value = '1.2'; // simula que el usuario lo arrastró a 1.2
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+      document.body.appendChild(document.createElement('span')); // dispara el MutationObserver
+      await new Promise((r) => setTimeout(r, 150));
+      return Number(slider.value);
+    });
     assert(
-      'los botones muestran el atajo (chip)',
-      ui.chips.some((c) => c && c.trim().length > 0),
-      `chips=${JSON.stringify(ui.chips)}`,
+      'el slider no se resetea con mutaciones del DOM (se puede mover)',
+      sliderAfter === 1.2,
+      `val=${sliderAfter}`,
     );
+
+    // 5c-bis) La tecla F la maneja el content script (hace preventDefault para
+    //         entrar/salir de fullscreen). El fullscreen real no es fiable en
+    //         headless, así que verificamos que el handler corrió.
+    const fHandled = await provider.evaluate(() => {
+      const ev = new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true });
+      document.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    });
+    assert('la tecla F está enganchada (fullscreen)', fHandled, 'la F no fue manejada');
+
+    // 5d) NAVEGACIÓN IN-PLACE: "Siguiente" carga el cap 38 en el MISMO iframe sin
+    //     recargar la página (clave para que el fullscreen persista entre caps).
+    await page.evaluate(() => (window.__jkProbe = 'kept')); // se borraría con una recarga real
+    await provider.evaluate(() => {
+      const btn = [...document.querySelectorAll('#__jkflow_controls button')].find((b) =>
+        /Siguiente/.test(b.textContent),
+      );
+      btn.click();
+    });
+    await sleep(1200);
+    const navState = await page.evaluate(() => ({
+      probe: window.__jkProbe,
+      url: location.href,
+      iframeSrc: document.querySelector('iframe.player_conte')?.src || '',
+    }));
+    assert('"Siguiente" NO recarga la página (carga in-place)', navState.probe === 'kept', `probe=${navState.probe}`);
+    assert('la URL cambió al cap 38', /pokemon\/38\//.test(navState.url), navState.url);
+    assert('el player cambió al cap 38 (mismo iframe)', /ep=38/.test(navState.iframeSrc), navState.iframeSrc);
 
     // 6) REGRESIÓN del bug: con autoFullscreen ON, un clic en el TOP frame NO debe
     //    ser secuestrado hacia el botón "fullscreen" de la página.
