@@ -19,18 +19,7 @@ if (window.top === window) {
     let shim = null;
 
     const playerIframe = () => document.querySelector(PLAYER);
-    // El contenedor que llevamos a fullscreen: el padre del iframe. Sobrevive al
-    // cambio de src del iframe (a diferencia del propio iframe o algo más adentro).
-    const fsTarget = () => playerIframe()?.parentElement || null;
     const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-
-    // En fullscreen, que el contenedor y el iframe llenen la pantalla.
-    const style = document.createElement('style');
-    style.textContent =
-      '.__jkflow_fs:fullscreen{width:100vw!important;height:100vh!important;background:#000;' +
-      'display:flex;align-items:center;justify-content:center;}' +
-      '.__jkflow_fs:fullscreen iframe.player_conte{width:100%!important;height:100%!important;}';
-    (document.head || document.documentElement).appendChild(style);
 
     // --- Servidores ---------------------------------------------------------
     const serverTabs = () => [...document.querySelectorAll('a.servers')];
@@ -104,18 +93,33 @@ if (window.top === window) {
       if (!(await navigateInPlace(prevHref)) && prevHref) window.location.href = prevHref;
     };
 
-    // --- Fullscreen del contenedor (persiste entre capítulos) ---------------
+    // --- Fullscreen del IFRAME del player (no su contenedor) ----------------
+    // Llevar a fullscreen el iframe hace que su CONTENIDO (el player) llene la
+    // pantalla. Antes usábamos el contenedor padre, que se hacía fullscreen pero
+    // dejaba el player chico dentro. El iframe persiste al cambiar de capítulo.
     const enterFullscreen = () => {
-      const target = fsTarget();
-      if (!target || isFullscreen()) return;
-      target.classList.add('__jkflow_fs');
-      const request = target.requestFullscreen || target.webkitRequestFullscreen;
+      const iframe = playerIframe();
+      if (!iframe || isFullscreen()) return;
+      const request = iframe.requestFullscreen || iframe.webkitRequestFullscreen;
       if (!request) return;
       try {
-        const result = request.call(target, { navigationUI: 'hide' });
+        const result = request.call(iframe, { navigationUI: 'hide' });
         if (result && result.catch) result.catch(() => {});
       } catch {
         /* sin gesto válido */
+      }
+    };
+
+    // Mantener el reproductor "seleccionado": al enfocar el iframe, las teclas
+    // (la F) van al frame del player, no al top frame de jkanime.
+    const focusPlayer = () => {
+      const iframe = playerIframe();
+      if (iframe) {
+        try {
+          iframe.focus({ preventScroll: true });
+        } catch {
+          /* noop */
+        }
       }
     };
 
@@ -184,9 +188,16 @@ if (window.top === window) {
       else if (message?.type === 'prev') goPrev();
     });
 
-    // Cambiar de servidor recarga el iframe interno: re-aplica ajustes.
     document.addEventListener('click', (event) => {
-      if (event.target.closest('a.servers')) setTimeout(activatePlayers, 1500);
+      const target = event.target;
+      // Cambiar de servidor recarga el iframe interno: re-aplica ajustes.
+      if (target.closest('a.servers')) setTimeout(activatePlayers, 1500);
+      // Tras clickear FUERA del player (links, fondo, etc.), devolvemos el foco al
+      // reproductor para que la tecla F siga yendo al player y no al top frame.
+      // Excepto si clickeaste un campo de texto, donde sí quieres escribir.
+      if (!target.closest('input,textarea,select,[contenteditable="true"]')) {
+        setTimeout(focusPlayer, 0);
+      }
     });
 
     // --- Init ---------------------------------------------------------------
@@ -194,5 +205,15 @@ if (window.top === window) {
     if (settings.autoSelectServer && settings.preferredServer) selectServer(settings.preferredServer);
     armFullscreenShim();
     setTimeout(activatePlayers, 1500);
+
+    // Enfoca el player en cuanto exista (jkanime lo crea con JS), para que la
+    // tecla F funcione desde el principio sin tener que clickear el video.
+    const focusTries = setInterval(() => {
+      if (playerIframe()) {
+        focusPlayer();
+        clearInterval(focusTries);
+      }
+    }, 400);
+    setTimeout(() => clearInterval(focusTries), 10000);
   })();
 }
