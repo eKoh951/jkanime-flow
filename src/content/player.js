@@ -73,7 +73,7 @@ if (!window.__jkflowPlayer) {
     }, 2500);
   };
 
-  const formatSpeed = (value) => `${Number(value).toFixed(2).replace(/\.?0+$/, '')}×`;
+  const formatSpeed = (value) => `${Number(value).toFixed(2)}×`;
 
   // Escribe settings (desde el panel) a chrome.storage.sync. Esto dispara el
   // storage.onChanged del background, que re-emite el activate a TODOS los frames
@@ -86,16 +86,20 @@ if (!window.__jkflowPlayer) {
     }
   };
 
-  // Paleta tipo Netflix: primario blanco sólido, secundarios gris translúcido.
-  const FONT = "'Netflix Sans','Helvetica Neue',Helvetica,Arial,system-ui,sans-serif";
+  // Paleta tipo jkanime.net: acento naranja sobre fondos slate oscuros,
+  // tipografía Oswald (títulos/botones) + Mulish (texto del panel).
+  const FONT = "'Oswald','Arial Narrow',Arial,sans-serif";
+  const FONT_BODY = "'Mulish','Helvetica Neue',Helvetica,Arial,system-ui,sans-serif";
+  const ACCENT = '#ff9d00';
+  const ACCENT_HOVER = '#ffb13d';
   const BASE =
     'all:unset;box-sizing:border-box;cursor:pointer;pointer-events:auto;user-select:none;' +
     `white-space:nowrap;display:inline-flex;align-items:center;gap:9px;border-radius:4px;font-family:${FONT};` +
     'transition:background .15s,transform .12s,box-shadow .15s;';
-  const PRIMARY_BG = '#ffffff';
-  const PRIMARY_HOVER = 'rgba(255,255,255,.78)';
-  const SECONDARY_BG = 'rgba(109,109,110,.7)';
-  const SECONDARY_HOVER = 'rgba(109,109,110,.45)';
+  const PRIMARY_BG = ACCENT;
+  const PRIMARY_HOVER = ACCENT_HOVER;
+  const SECONDARY_BG = 'rgba(71,76,103,.75)';
+  const SECONDARY_HOVER = 'rgba(99,104,138,.85)';
 
   const makeButton = ({ icon, label, command, title, primary }) => {
     const button = document.createElement('button');
@@ -103,10 +107,10 @@ if (!window.__jkflowPlayer) {
     const bg = primary ? PRIMARY_BG : SECONDARY_BG;
     const hover = primary ? PRIMARY_HOVER : SECONDARY_HOVER;
     button.style.cssText = primary
-      ? `${BASE}font-weight:700;font-size:16px;color:#000;background:${bg};` +
+      ? `${BASE}font-weight:700;font-size:16px;color:#fff;background:${bg};` +
         'padding:13px 24px;box-shadow:0 2px 14px rgba(0,0,0,.45);'
       : `${BASE}font-weight:600;font-size:14px;color:#fff;background:${bg};` +
-        'padding:10px 16px;border:1px solid rgba(255,255,255,.18);' +
+        'padding:10px 16px;border:1px solid rgba(255,157,0,.35);' +
         'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);';
 
     button.textContent = icon ? `${label} ${icon}` : label;
@@ -145,7 +149,7 @@ if (!window.__jkflowPlayer) {
   const makeToggle = (key) => {
     const input = document.createElement('input');
     input.type = 'checkbox';
-    input.style.cssText = 'width:17px;height:17px;accent-color:#e50914;cursor:pointer;';
+    input.style.cssText = `width:17px;height:17px;accent-color:${ACCENT};cursor:pointer;`;
     input.addEventListener('change', () => saveSetting({ [key]: input.checked }));
     panelInputs[key] = input;
     return input;
@@ -166,17 +170,17 @@ if (!window.__jkflowPlayer) {
     p.id = '__jkflow_panel';
     p.style.cssText =
       'position:fixed;right:2.5%;bottom:18%;z-index:2147483647;width:266px;' +
-      'background:rgba(18,18,18,.97);color:#fff;border:1px solid rgba(255,255,255,.12);' +
+      'background:rgba(31,33,43,.97);color:#fff;border:1px solid rgba(255,157,0,.3);' +
       'border-radius:12px;padding:13px 16px;box-shadow:0 10px 34px rgba(0,0,0,.6);' +
       'pointer-events:auto;display:none;' +
-      "font:500 13px/1.35 'Netflix Sans','Helvetica Neue',Helvetica,Arial,system-ui,sans-serif;";
+      `font:500 13px/1.35 ${FONT_BODY};`;
 
     const header = document.createElement('div');
     header.style.cssText =
       'display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;';
     const title = document.createElement('strong');
     title.textContent = 'Ajustes';
-    title.style.cssText = 'font-size:14px;';
+    title.style.cssText = `font-size:15px;font-family:${FONT};letter-spacing:.3px;color:${ACCENT};`;
     const close = document.createElement('button');
     close.textContent = '✕';
     close.title = 'Cerrar';
@@ -199,17 +203,51 @@ if (!window.__jkflowPlayer) {
     const speedVal = document.createElement('span');
     speedVal.style.cssText = 'font-weight:700;font-variant-numeric:tabular-nums;';
     speedHead.append(speedLabel, speedVal);
+    const SPEED_STEP = 0.05;
+    const clampSpeed = (value) =>
+      Math.round(Math.min(2, Math.max(1, value)) / SPEED_STEP) * SPEED_STEP;
+    const commitSpeed = (value) => {
+      const clamped = Math.round(clampSpeed(value) * 100) / 100;
+      speed.value = clamped;
+      speedVal.textContent = formatSpeed(clamped);
+      saveSetting({ playbackSpeed: clamped });
+    };
+
     const speed = document.createElement('input');
     speed.type = 'range';
     speed.min = '1';
     speed.max = '2';
-    speed.step = '0.05';
-    speed.style.cssText = 'width:100%;accent-color:#e50914;cursor:pointer;margin:3px 0 6px;';
+    speed.step = String(SPEED_STEP);
+    speed.style.cssText = `flex:1;accent-color:${ACCENT};cursor:pointer;`;
     speed.addEventListener('input', () => (speedVal.textContent = formatSpeed(speed.value)));
-    speed.addEventListener('change', () => saveSetting({ playbackSpeed: Number(speed.value) }));
+    speed.addEventListener('change', () => commitSpeed(speed.value));
+
+    const makeStepButton = (symbol, delta) => {
+      const step = document.createElement('button');
+      step.type = 'button';
+      step.textContent = symbol;
+      step.title = delta > 0 ? 'Aumentar velocidad' : 'Disminuir velocidad';
+      step.style.cssText =
+        `${BASE}flex:none;justify-content:center;width:26px;height:26px;padding:0;` +
+        `font-size:16px;font-weight:700;color:#fff;background:rgba(71,76,103,.75);` +
+        'border:1px solid rgba(255,157,0,.35);';
+      step.addEventListener('mouseenter', () => (step.style.background = ACCENT));
+      step.addEventListener('mouseleave', () => (step.style.background = 'rgba(71,76,103,.75)'));
+      step.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        commitSpeed(Number(speed.value) + delta);
+      });
+      return step;
+    };
+
+    const speedRow = document.createElement('div');
+    speedRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:3px 0 6px;';
+    speedRow.append(makeStepButton('−', -SPEED_STEP), speed, makeStepButton('+', SPEED_STEP));
+
     panelInputs.playbackSpeed = speed;
     panelInputs.speedVal = speedVal;
-    p.append(speedHead, speed);
+    p.append(speedHead, speedRow);
 
     // Toggles.
     p.append(
@@ -271,14 +309,14 @@ if (!window.__jkflowPlayer) {
     gear.title = 'Ajustes';
     gear.style.cssText =
       `${BASE}justify-content:center;font-size:18px;line-height:1;color:#fff;` +
-      'background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);padding:8px 11px;' +
+      'background:rgba(71,76,103,.75);border:1px solid rgba(255,157,0,.35);padding:8px 11px;' +
       'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);';
     gear.addEventListener('mouseenter', () => {
-      gear.style.background = 'rgba(229,9,20,.9)';
+      gear.style.background = ACCENT;
       gear.style.transform = 'scale(1.06)';
     });
     gear.addEventListener('mouseleave', () => {
-      gear.style.background = 'rgba(0,0,0,.6)';
+      gear.style.background = 'rgba(71,76,103,.75)';
       gear.style.transform = 'scale(1)';
     });
     gear.addEventListener('click', (event) => {
@@ -310,16 +348,15 @@ if (!window.__jkflowPlayer) {
     if (controls || !currentVideo()) return;
     controls = document.createElement('div');
     controls.id = '__jkflow_controls';
-    // Cluster abajo-derecha: [ Saltar intro ]   [ ⚙ / SIGUIENTE ].
+    // Cluster abajo-derecha: [ ⚙ ]  [ Saltar intro ]  [ SIGUIENTE ].
     controls.style.cssText =
       'position:fixed;right:2.5%;bottom:8%;z-index:2147483647;' +
       'display:flex;align-items:flex-end;gap:16px;pointer-events:none;opacity:0;transition:opacity .25s ease;';
 
-    // Columna derecha: el engranaje encima del botón "Siguiente".
-    const nextColumn = document.createElement('div');
-    nextColumn.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:8px;';
-    nextColumn.append(
+    panel = buildPanel();
+    controls.append(
       makeGear(),
+      makeButton({ label: 'Saltar intro', command: 'skip-intro', title: 'Saltar opening' }),
       makeButton({
         icon: '▶',
         label: 'Siguiente',
@@ -327,12 +364,6 @@ if (!window.__jkflowPlayer) {
         title: 'Siguiente capítulo',
         primary: true,
       }),
-    );
-
-    panel = buildPanel();
-    controls.append(
-      makeButton({ label: 'Saltar intro', command: 'skip-intro', title: 'Saltar opening' }),
-      nextColumn,
       panel,
     );
     placeControls();

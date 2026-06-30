@@ -19,9 +19,9 @@ const status = document.getElementById('status');
 
 let currentSlug = null;
 
-// "1.5" en vez de "1.50"; "1" en vez de "1.00". Añade el signo ×.
+// Siempre 2 decimales (1.00×, 1.05×...) para que el ancho no cambie al variar la velocidad.
 function formatSpeed(value) {
-  return `${Number(value).toFixed(2).replace(/\.?0+$/, '')}×`;
+  return `${Number(value).toFixed(2)}×`;
 }
 
 function updateSpeedLabel() {
