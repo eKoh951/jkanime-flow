@@ -158,20 +158,25 @@ if (window.top === window) {
     });
 
     // Tecla F desde el top frame (cuando el foco no está en el iframe del video):
-    // entra/sale de fullscreen del contenedor (el que persiste entre capítulos).
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'f' && event.key !== 'F') return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const t = event.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      event.preventDefault();
-      if (isFullscreen()) {
-        (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
-      } else {
-        autoFsDone = true;
-        enterFullscreen();
-      }
-    });
+    // TOGGLE de fullscreen del contenedor (el que persiste entre capítulos).
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key !== 'f' && event.key !== 'F') return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const t = event.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (isFullscreen()) {
+          (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+        } else {
+          autoFsDone = true;
+          enterFullscreen();
+        }
+      },
+      true,
+    );
 
     // --- Mensajes (atajos + botones del player) -----------------------------
     chrome.runtime.onMessage.addListener((message) => {

@@ -431,8 +431,10 @@ if (!window.__jkflowPlayer) {
     }
   });
 
-  // Tecla F: entra/sale de pantalla completa del reproductor (este frame es el que
-  // tiene el foco mientras ves el video, así que aquí captura la F).
+  // Tecla F: TOGGLE de pantalla completa del reproductor (este frame es el que
+  // tiene el foco mientras ves el video, así que aquí captura la F). Cortamos la
+  // propagación para que el handler de F NATIVO del proveedor no se dispare y
+  // "vuelva a entrar" al salir (por eso antes entraba pero no salía).
   const isTyping = (el) =>
     el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
   document.addEventListener(
@@ -441,6 +443,7 @@ if (!window.__jkflowPlayer) {
       if (event.key !== 'f' && event.key !== 'F') return;
       if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target)) return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       if (document.fullscreenElement || document.webkitFullscreenElement) {
         (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
       } else {
