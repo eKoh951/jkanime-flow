@@ -8,6 +8,8 @@
 //      sobrevive al cambio de src. Se entra con el primer clic del usuario.
 //   4. Avisa al background para aplicar velocidad/ajustes en el frame del player.
 
+import { jkflowGetSettings } from '../lib/defaults.js';
+
 if (window.top === window) {
   (async () => {
     const settings = await jkflowGetSettings();

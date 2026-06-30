@@ -3,7 +3,7 @@
 //   - Reenvía los settings al frame del player cuando jkanime lo pide.
 // Solo actúa sobre pestañas de jkanime; el resto de la navegación lo ignora.
 
-importScripts('lib/defaults.js');
+import { jkflowSeriesSlug, jkflowGetSettings } from './lib/defaults.js';
 
 const isJkanime = (url) => !!url && /:\/\/([^/]+\.)?jkanime\.net\//.test(url);
 

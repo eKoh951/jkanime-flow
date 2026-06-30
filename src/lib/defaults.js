@@ -1,9 +1,8 @@
 // Valores por defecto y helpers compartidos entre el background, el popup y el
-// content script de jkanime. Se carga como script clásico (sin módulos ES) para
-// poder reutilizar las mismas constantes en los tres contextos.
+// content script de jkanime. Módulo ES: cada contexto lo importa (Vite/CRXJS
+// lo bundlea donde se use, sin duplicar código ni depender de scripts clásicos).
 
-// eslint-disable-next-line no-unused-vars, no-var
-var JKFLOW_DEFAULTS = {
+export const JKFLOW_DEFAULTS = {
   autoSelectServer: true,
   preferredServer: 'Streamwish',
   autoSpeed: true,
@@ -16,15 +15,13 @@ var JKFLOW_DEFAULTS = {
 };
 
 // Servidores que ofrece jkanime, en el orden de sus pestañas.
-// eslint-disable-next-line no-unused-vars, no-var
-var JKFLOW_SERVERS = [
+export const JKFLOW_SERVERS = [
   'Desu', 'Magi', 'Desuka', 'Mega', 'Streamwish', 'VOE',
   'Vidhide', 'Mixdrop', 'Mp4upload', 'Streamtape', 'Doodstream',
 ];
 
 // Slug de la serie a partir de la URL del capítulo: /pokemon/38/ -> "pokemon".
-// eslint-disable-next-line no-unused-vars
-function jkflowSeriesSlug(url) {
+export function jkflowSeriesSlug(url) {
   try {
     const segments = new URL(url).pathname.split('/').filter(Boolean);
     return segments[0] || null;
@@ -34,7 +31,6 @@ function jkflowSeriesSlug(url) {
 }
 
 // Lee los settings combinando lo guardado con los defaults. Devuelve una promesa.
-// eslint-disable-next-line no-unused-vars
-function jkflowGetSettings() {
+export function jkflowGetSettings() {
   return chrome.storage.sync.get(JKFLOW_DEFAULTS);
 }

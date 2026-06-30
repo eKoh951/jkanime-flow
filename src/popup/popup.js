@@ -1,6 +1,8 @@
 // UI de preferencias. Auto-guarda al cambiar cualquier campo. Detecta la serie
 // de la pestaña activa para permitir un salto de opening propio por serie.
 
+import { JKFLOW_SERVERS, jkflowSeriesSlug, jkflowGetSettings } from '../lib/defaults.js';
+
 const fields = {
   autoSelectServer: document.getElementById('autoSelectServer'),
   preferredServer: document.getElementById('preferredServer'),

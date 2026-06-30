@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', 'dist');
 const ARTIFACTS = path.join(__dirname, '.artifacts');
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 
@@ -55,14 +55,22 @@ async function main() {
 
   const logs = [];
   try {
-    // 1) Service worker (background) de la extensión.
+    // 1) Service worker (background) de la extensión. CRXJS bundlea el background
+    // real con un hash, pero siempre genera este loader con nombre fijo.
     const swTarget = await browser.waitForTarget(
-      (t) => t.type() === 'service_worker' && t.url().includes('background.js'),
+      (t) => t.type() === 'service_worker' && t.url().includes('service-worker-loader.js'),
       { timeout: 15000 },
     );
     const sw = await swTarget.worker();
     const extId = new URL(swTarget.url()).host;
     ok(`service worker activo (${extId})`);
+
+    // El worker tarda un poco en tener las bindings de chrome.* listas justo
+    // después de que CDP ve aparecer el target (carrera, no pasa con la
+    // extensión sin bundlear). Esperamos a que chrome.storage exista de verdad.
+    for (let i = 0; i < 20 && (await sw.evaluate(() => typeof chrome?.storage)) !== 'object'; i++) {
+      await sleep(100);
+    }
 
     // 2) Pre-configura settings: auto-fullscreen ON para reproducir el bug de clics.
     await sw.evaluate(
@@ -90,6 +98,10 @@ async function main() {
 
     await page.setRequestInterception(true);
     page.on('request', (req) => {
+      // CRXJS bundlea los content scripts en chunks separados que se cargan con
+      // un `import()` dinámico desde un loader (chrome-extension://...): dejarlos
+      // pasar, si no el loader nunca consigue el chunk real y el script no corre.
+      if (req.url().startsWith('chrome-extension://')) return req.continue();
       let host = '';
       try {
         host = new URL(req.url()).hostname;

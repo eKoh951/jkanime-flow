@@ -4,9 +4,14 @@
   "private": true,
   "description": "Extensión MV3 para jkanime + harness de pruebas agéntico.",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "pretest": "vite build",
     "test": "node test/harness.js"
   },
   "devDependencies": {
-    "puppeteer-core": "^23.0.0"
+    "@crxjs/vite-plugin": "^2.0.0",
+    "puppeteer-core": "^23.0.0",
+    "vite": "^5.4.0"
   }
 }
